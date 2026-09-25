@@ -1,0 +1,10 @@
+langchain
+langchain-community
+langchain-openai
+langchain-mistralai
+langchain-chroma
+chromadb
+streamlit
+python-dotenv
+pypdf
+docx2txt

@@ -1,0 +1,93 @@
+# ⚖️ Clause IQ — AI-Powered Contract Risk Analyzer
+
+Clause IQ is a Retrieval-Augmented Generation (RAG) app that lets you upload a legal contract and ask natural-language questions about it — termination clauses, indemnity risk, penalties, auto-renewal terms, and more. It retrieves the most relevant clauses from the document and uses an LLM to answer your question while flagging potentially risky language.
+
+## ✨ Features
+
+- 📄 Upload contracts in **PDF, DOCX, or TXT**
+- 🔍 Ask free-form questions (e.g. *"What are the termination clauses?"*)
+- ⚠️ Automatic **risk keyword detection** (liability, termination, indemnity, penalty, renewal)
+- 🎛️ Adjustable **retrieval depth (Top-K)** and **risk sensitivity**
+- 📂 Source-chunk attribution for every answer
+- ⬇️ Downloadable **risk analysis report**
+- 🧠 Powered by **Mistral AI** for generation and **OpenAI embeddings** for retrieval
+
+## 🏗️ Tech Stack
+
+| Component | Technology |
+
+| UI | Streamlit |
+| Orchestration | LangChain |
+| Vector Store | ChromaDB |
+| Embeddings | OpenAI (`text-embedding-3-small`) |
+| LLM | Mistral AI |
+| Document Parsing | PyPDFLoader, Docx2txtLoader, TextLoader |
+
+## 📁 Project Structure
+
+'''
+clause-iq/
+├── app.py              # Streamlit UI
+├── config.py           # API keys, model + chunking config
+├── document_loader.py  # Loads and splits PDF/DOCX/TXT files
+├── ingest.py           # Builds the vector store from a folder of contracts
+├── retriever.py        # Wraps the vector store as a retriever
+├── risk_analyzer.py    # RAG chain + risk-aware prompt template
+├── vector_store.py     # Chroma embedding + persistence logic
+└── requirements.txt
+'''
+
+## 📊 Dataset
+
+Clause IQ doesn't ship with a bundled dataset — it's designed to analyze *any contract you upload* at runtime. For building and testing the RAG pipeline (ingestion, chunking, retrieval quality), the following publicly available legal-contract sources work well:
+
+-1. [CUAD – Contract Understanding Atticus Dataset](https://www.atticusprojectai.org/cuad) — 510 real commercial contracts (NDAs, licensing, employment, M&A, etc.) sourced from *SEC EDGAR* filings, expert-annotated across 41 clause categories. Great for testing retrieval and risk-clause detection at scale. Available on [Hugging Face](https://huggingface.co/datasets/theatticusproject/cuad-qa) and [Zenodo](https://zenodo.org/record/4595826).
+
+-2.[LegalBench-RAG](https://arxiv.org/abs/2408.10343)** — a benchmark combining CUAD, ContractNLI (NDAs), MAUD (M&A agreements), and PrivacyQA, useful if you want to evaluate retrieval accuracy with ground-truth Q&A pairs.
+
+> ⚠️ Note: publicly filed contracts (e.g. via EDGAR/CUAD) are legally public documents, but always double-check licensing terms before redistributing any dataset you package with the project.
+
+## ⚙️ Setup
+
+```bash
+git clone <your-repo-url>
+cd clause-iq
+pip install -r requirements.txt
+```
+
+Create a `.env` file in the project root:
+
+'''
+OPENAI_API_KEY = your_openai_key
+MISTRAL_API_KEY = your_mistral_key
+MISTRAL_MODEL = open-mistral-7b
+'''
+
+## 🚀 Usage
+
+a. Ingest contracts into the vector store
+
+Place one or more contract files in the folder pointed to by `DATA_DIR` in `config.py`, then run:
+
+```bash
+python ingest.py
+```
+
+b. Launch the app
+
+```bash
+streamlit run app.py
+```
+
+c..Analyze
+
+Upload a contract, type a question (or use one of the sidebar examples), and click ** Analyze Contract ** to get an answer, flagged risk areas, and source citations.
+
+## 🔮 Roadmap
+
+- [ ] Clause-level highlighting in the source document
+- [ ] Multi-document comparison
+- [ ] Configurable risk-keyword taxonomy per industry
+- [ ] Export report as PDF
+
+Built with LangChain • ChromaDB • Mistral AI • Streamlit
