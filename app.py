@@ -1,195 +1,116 @@
 import os
-import tempfile
-
+import uuid
+from pathlib import Path
 import streamlit as st
 
+from config import DATA_DIR, VECTOR_STORE_DIR
 from document_loader import load_and_split
 from vector_store import build_vector_store
-from risk_analyzer import build_qa_chain, analyze
+from risk_analyzer import analyze, build_qa_chain
 
-st.set_page_config(
-    page_title = "Clause IQ - Contract Risk Analyzer",
-    page_icon = "⚖️",
-    layout = "wide")
+st.set_page_config(page_title = "Clause IQ", page_icon = "⚖️")
+st.title("⚖️ Clause IQ - Contract Risk Analyzer")
+st.caption("Upload a contract and ask questions about its clauses and potential risks.")
 
-# Custom CSS
-st.markdown("""
-<style>
-.main {
-    background-color: #0E1117;
-}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+Path(DATA_DIR).mkdir(parents = True, exist_ok = True)
 
-.metric-card {
-    background: #1E1E2F;
-    padding: 15px;
-    border-radius: 15px;
-    text-align:center;
-    color:white;
-}
+def save_uploaded_file(uploaded_file) -> str:
+    original_name = Path(uploaded_file.name.replace("\\", "/")).name
+    extension = Path(original_name).suffix.lower()
 
-.answer-box {
-    background:#1A2333;
-    padding:20px;
-    border-radius:15px;
-    border-left:5px solid #4CAF50;
-}
+    if extension not in SUPPORTED_EXTENSIONS:
+        raise ValueError(f"Unsupported file type: {extension or 'no extension'}")
 
-.risk-box {
-    background:#2A1A1A;
-    padding:15px;
-    border-radius:12px;
-    border-left:5px solid red;
-}
+    safe_stem = Path(original_name).stem.replace(" ", "_")
+    unique_name = f"{safe_stem}_{uuid.uuid4().hex[:8]}{extension}"
+    destination = Path(DATA_DIR) / unique_name
 
-.stButton>button {
-    width:100%;
-    border-radius:10px;
-    height:50px;
-    font-size:16px;
-}
-</style>
-""", unsafe_allow_html = True)
+    with destination.open("wb") as output_file:
+        output_file.write(uploaded_file.getbuffer())
 
-st.title("⚖️ Clause IQ - Contract Risk Analyzer")  
-st.caption("AI-Powered Contract Review using RAG + Mistral AI")
+    return str(destination)
+
 
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("Upload contracts")
 
-    top_k = st.slider(
-        "Retrieved Chunks",
-        min_value = 1,
-        max_value = 10,
-        value = 5)
+    uploaded_files = st.file_uploader("Choose PDF, DOCX or TXT files",
+        type = ["pdf", "docx", "txt"],
+        accept_multiple_files = True)
 
-    risk_level = st.selectbox(
-        "Risk Sensitivity",
-        ["Low", "Medium", "High"])
+    if st.button("Process documents", use_container_width = True):
 
-    st.divider()
-    st.markdown("Example Questions")
-    examples = ["What are the termination clauses?",
-        "Is there any indemnity risk?",
-        "What penalties are mentioned?",
-        "Are there auto-renewal clauses?",
-        "What liabilities exist?"]
+        if not uploaded_files:
+            st.warning("Please upload at least one contract.")
 
-    for q in examples:
-        st.write("•", q)
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("LLM", "Mistral")
-
-with col2:
-    st.metric("Retriever", f"Top-{top_k}")
-
-with col3:
-    st.metric("Sensitivity", risk_level)
-
-st.divider()
-
-uploaded_file = st.file_uploader("Upload Contract",
-    type=["pdf", "docx", "txt"])
-
-question = st.text_area("Ask a Contract Question",
-    placeholder="Example: What risks exist in this agreement?")
-
-if st.button("🔍 Analyze Contract"):
-
-    if not question:
-        st.warning("Please enter a question.")
-    elif not uploaded_file:
-        st.warning("Please upload a contract file.")
-    else:
-
-        with st.spinner("Analyzing contract..."):
-
+        else:
             try:
-                suffix = os.path.splitext(uploaded_file.name)[1]
-                with tempfile.NamedTemporaryFile(delete = False, suffix = suffix) as tmp:
-                    tmp.write(uploaded_file.getvalue())
-                    tmp_path = tmp.name
+                with st.spinner("Reading and indexing contracts..."):
+                    all_chunks = []
 
-                try:
-                    chunks = load_and_split(tmp_path)
-                    vector_store = build_vector_store(chunks, persist_dir = None)
+                    for uploaded_file in uploaded_files:
+                        saved_path = save_uploaded_file(uploaded_file)
+                        all_chunks.extend(load_and_split(saved_path))
 
-                    retriever = vector_store.as_retriever(search_kwargs = {"k": top_k})
-                    chain = build_qa_chain(retriever)
-                    result = analyze(question, chain)
+                    if not all_chunks:
+                        raise ValueError(
+                            "No text chunks were extracted. Check that the files "
+                            "contain readable text.")
 
-                finally:
-                    os.remove(tmp_path)
+                    # Discard the old chain before replacing the persistent index.
+                    st.session_state.pop("chain", None)
 
-                answer = result["answer"]
-                sources = result["sources"]
+                    # build_vector_store replaces the existing index by default.
+                    build_vector_store(all_chunks, persist_dir=VECTOR_STORE_DIR)
 
-                st.success("Analysis Complete")
+                    # Build a fresh chain connected to the newly created index.
+                    st.session_state.chain = build_qa_chain()
 
-                st.subheader("📋 Analysis")
+                st.success(f"Indexed {len(all_chunks)} document chunks successfully.")
 
-                st.markdown(
-                    f"""
-                    <div class = 'answer-box'>
-                    {answer}
-                    </div>
-                    """,
-                    unsafe_allow_html = True)
+            except Exception as error:
+                st.error(f"Could not process the documents: {error}")
 
-                st.subheader("⚠️ Potential Risk Areas")
-
-                risk_keywords = ["liability",
-                    "termination",
-                    "indemnity",
-                    "penalty",
-                    "renewal"]
-
-                detected = []
-
-                for word in risk_keywords:
-                    if word.lower() in answer.lower():
-                        detected.append(word)
-
-                if detected:
-                    for risk in detected:
-                        st.markdown(
-                            f"""
-                            <div class = 'risk-box'>
-                            🚨 {risk.upper()}
-                            </div>
-                            """,
-                            unsafe_allow_html = True)
-                else:
-                    st.info("No major risk keywords detected.")
-
-                st.subheader("📂 Sources")
-
-                for src in set(sources):
-                    st.write("📄", src)
-
-                report = f"""
-CONTRACT RISK ANALYSIS REPORT
-
-Question:
-{question}
-
-Answer:
-{answer}
-
-Sources:
-{sources}
-"""
-
-                st.download_button(
-                    "⬇ Download Report",
-                    report,
-                    file_name="risk_report.txt")
-
-            except Exception as e:
-                st.error(str(e))
+    if Path(VECTOR_STORE_DIR).is_dir():
+        st.info("A saved vector store is available. You can ask questions.")
 
 
-st.divider()
-st.caption("Built with LangChain • ChromaDB • Mistral AI • Streamlit")
+st.header("Ask a question")
+question = st.text_input(
+    "Your question",
+    placeholder="e.g. What are the termination and penalty clauses?")
+
+if st.button("Analyze", type = "primary"):
+
+    if not question.strip():
+        st.warning("Please enter a question.")
+
+    elif not Path(VECTOR_STORE_DIR).is_dir():
+        st.warning("Upload and process a contract first.")
+
+    else:
+        try:
+            with st.spinner("Analyzing the contract..."):
+                if "chain" not in st.session_state:
+                    st.session_state.chain = build_qa_chain()
+
+                result = analyze(question, st.session_state.chain)
+
+            st.subheader("Answer")
+            st.write(result["answer"])
+
+            st.subheader("Sources")
+            sources = sorted(set(result["sources"]))
+
+            if sources:
+                for source in sources:
+                    st.markdown(f"- `{Path(source).name}`")
+                    
+            else:
+                st.write("No source information was returned.")
+
+        except Exception as error:
+            st.error(f"Something went wrong: {error}")
+
+    
