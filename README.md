@@ -4,7 +4,7 @@
 
 ### AI-powered contract risk analyzer
 
-Upload a contract, ask questions in plain English, and get answers grounded in the actual clauses, with the risky ones flagged and the source file cited.
+Upload a contract, ask questions in Natural Language, and get answers grounded in the actual clauses, with the risky ones flagged and the source file cited.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
